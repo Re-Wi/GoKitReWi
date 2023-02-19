@@ -1,9 +1,9 @@
 package handlers
 
 import (
-	"GinGoReWi/utils/helpers"
 	"bufio"
 	"fmt"
+	"github.com/Re-Wi/GoKitReWi/helpers"
 	"github.com/XM-GO/PandaKit/utils"
 	"gopkg.in/yaml.v3"
 	"io/ioutil"

@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"GinGoReWi/utils/helpers"
 	"fmt"
+	"github.com/Re-Wi/GoKitReWi/helpers"
 	"io/ioutil"
 	"path"
 	"strings"

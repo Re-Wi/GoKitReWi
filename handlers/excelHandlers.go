@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-
 	"github.com/xuri/excelize/v2"
 )
 
@@ -19,7 +18,7 @@ var (
 // 创建 Excel 文档
 func SaveExcel(filename string) {
 	// 创建一个工作表
-	index := excel.NewSheet(sheetName)
+	index, _ := excel.NewSheet(sheetName)
 	// 设置单元格的值
 	//err := f.SetCellValue("Sheet2", "A2", "Hello world.")
 	//if err != nil {
