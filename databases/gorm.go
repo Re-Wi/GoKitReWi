@@ -2,7 +2,7 @@ package databases
 
 import (
 	"database/sql"
-	"github.com/XM-GO/PandaKit/logger"
+	"github.com/Re-Wi/GoKitReWi/logger"
 	_ "github.com/lib/pq"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
