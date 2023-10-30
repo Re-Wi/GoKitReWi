@@ -2,10 +2,11 @@ package databases
 
 import (
 	"fmt"
-	"gorm.io/gorm"
 	"log"
 	"reflect"
 	"testing"
+
+	"gorm.io/gorm"
 )
 
 type Test struct {
@@ -20,7 +21,7 @@ func TestExportExcel(t *testing.T) {
 	)
 
 	dbGorm := DbGorm{Type: "sqlite3"}
-	dbGorm.Dsn = "./sqlite3.db"
+	dbGorm.Dsn = "./database.sqlite3"
 	dbGorm.MaxIdleConns = 10
 	dbGorm.MaxOpenConns = 10
 	Db = dbGorm.GormInit()

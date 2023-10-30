@@ -1,12 +1,10 @@
-package handlers
+package helpers
 
 import (
 	"fmt"
-	"github.com/Re-Wi/GoKitReWi/helpers"
 	"io/ioutil"
 	"path"
 	"strings"
-	"time"
 )
 
 var filePathList []string
@@ -47,22 +45,4 @@ func GetPathFiles(folder string, suffix string) []string {
 		}
 	}
 	return filePathList
-}
-
-// 计划文件名解析
-func PlanFilenameParsing(filename string) *helpers.PlanFilename {
-	p := new(helpers.PlanFilename)
-	filenameList := strings.Split(filename, ".")
-
-	p.Status = filenameList[1]
-	p.Suffix = filenameList[2]
-	filenameList = strings.Split(filenameList[0], "__")
-
-	//fmt.Println(filenameList)
-	p.Project = filenameList[0]
-	local, _ := time.LoadLocation("Asia/Shanghai")
-	p.StartTime, _ = time.ParseInLocation("2006-01-02", filenameList[1], local)
-	p.FinishTime, _ = time.ParseInLocation("2006-01-02", filenameList[2], local)
-
-	return p
 }

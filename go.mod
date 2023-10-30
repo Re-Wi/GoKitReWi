@@ -7,6 +7,7 @@ require (
 	github.com/lib/pq v1.10.4
 	github.com/sirupsen/logrus v1.9.0
 	github.com/xuri/excelize/v2 v2.7.0
+	golang.org/x/image v0.0.0-20220902085622-e7cb96979f69
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/mysql v1.4.7
 	gorm.io/driver/postgres v1.4.8
