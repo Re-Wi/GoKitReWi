@@ -93,7 +93,7 @@ func InitLog(fileName, level string) *logrus.Logger {
 		if err != nil {
 			panic(any(fmt.Sprintf("日志级别不存在: %s", level)))
 		}
-		Log.SetLevel(myLevel)
+		// Log.SetLevel(myLevel)
 	}
 	Log.SetLevel(myLevel) // 设置日志级别，默认值为 logrus.InfoLevel
 	// if fileName != "" {
