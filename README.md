@@ -23,7 +23,7 @@ go get github.com/Re-Wi/GoKitReWi
 
 > 如果本地的 go 类库暂未维护到远端，如何引用本地类库的包呢？
 > 在 go.mod 文件中使用 replace 引用本地 go 类库，这个方式有时候更方便于开发。
-> 参考：https://www.zhihu.com/tardis/sogou/art/355318345
+> 参考：<https://www.zhihu.com/tardis/sogou/art/355318345>
 
 编辑 Go.mod 文件
 
@@ -33,11 +33,11 @@ module demo-go
 go 1.20
 
 require (
-	github.com/Re-Wi/GoKitReWi v0.1.1
+ github.com/Re-Wi/GoKitReWi v0.1.1
 )
 
 replace (
-	github.com/Re-Wi/GoKitReWi => ../GoKitReWi
+ github.com/Re-Wi/GoKitReWi => ../GoKitReWi
 )
 
 ```
@@ -49,7 +49,8 @@ replace (
 ├─handlers    内容处理对象及成员属性
 ├─helpers     内容处理函数
 ├─logger      打印日志
-└─producer    生产数据
+├─producer    生产数据
+└─tools       可打包为小工具
 ```
 
 ## 参与开发
