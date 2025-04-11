@@ -234,3 +234,53 @@ func RunCreatePatch(cmd *cobra.Command, args []string) error {
 	)
 	return nil
 }
+
+// 参数验证逻辑
+func ValidateApplyArgs(cmd *cobra.Command, args []string) error {
+	// 验证输入文件存在性
+	for i, path := range []string{args[0], args[2]} { // oldFile 和 patchFile
+		if _, err := os.Stat(path); err != nil {
+			return fmt.Errorf("参数 %d 文件不存在: %w", i+1, err)
+		}
+	}
+
+	// 验证块大小范围
+	blockSize, _ := cmd.Flags().GetInt("block-size")
+	if blockSize <= 0 {
+		blockSize = (4) // 4 KB
+	}
+	if blockSize > 16*1024 {
+		return fmt.Errorf("块大小需在 4-16384 KB 之间")
+	}
+
+	// 检查目标文件是否已存在
+	if _, err := os.Stat(args[1]); err == nil {
+		return fmt.Errorf("目标文件已存在: %s", args[1])
+	}
+
+	return nil
+}
+
+// 主执行函数
+func RunApplyPatch(cmd *cobra.Command, args []string) error {
+	// 解析参数
+	oldFile := args[0]
+	newFile := args[1]
+	patchFile := args[2]
+	blockSize, _ := cmd.Flags().GetInt("block-size")
+
+	// 执行补丁应用
+	if err := PatchToTarget(oldFile, newFile, patchFile, blockSize); err != nil {
+		// 清理可能生成的不完整文件
+		os.Remove(newFile)
+		return fmt.Errorf("补丁应用失败: %w", err)
+	}
+
+	// 输出结果信息
+	absNewPath, _ := filepath.Abs(newFile)
+	fmt.Printf("新文件生成成功！\n路径: %s\n大小: %.2f MB\n",
+		absNewPath,
+		GetFileSizeMB(newFile),
+	)
+	return nil
+}
