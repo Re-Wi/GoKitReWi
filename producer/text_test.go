@@ -8,8 +8,8 @@ import (
 func TestGenerateRandomTextFile(t *testing.T) {
 	// 定义文件名和大小范围
 	filename := "random.txt"
-	minSizeKB := 100 // 最小 100 KB
-	maxSizeKB := 500 // 最大 500 KB
+	minSizeKB := 300 // 最小 300 KB
+	maxSizeKB := 600 // 最大 600 KB
 
 	// 调用函数生成随机文件
 	err := GenerateRandomTextFile(filename, minSizeKB, maxSizeKB)

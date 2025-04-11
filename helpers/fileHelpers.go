@@ -53,6 +53,107 @@ func GetPathFiles(folder string, suffix string) []string {
 	return filePathList
 }
 
+// FileExists 检查指定文件夹中是否存在某个文件
+// 参数：
+//
+//	dirPath: 目标文件夹路径（绝对路径或相对路径）
+//	filename: 需要检查的文件名（含扩展名）
+//
+// 返回值：
+//
+//	exists: 文件是否存在
+//	isFile: 是否是普通文件（而非目录）
+//	err: 错误信息（权限问题等）
+func FileExists(dirPath string, filename string) (exists bool, isFile bool, err error) {
+	// 拼接完整路径（自动处理路径分隔符）
+	fullPath := filepath.Join(dirPath, filename)
+
+	// 获取文件信息
+	fileInfo, err := os.Stat(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// 文件不存在不是错误，正常返回
+			return false, false, nil
+		}
+		// 其他错误（如权限问题）
+		return false, false, err
+	}
+
+	// 检查是否为普通文件（排除目录）
+	return true, !fileInfo.IsDir(), nil
+}
+
+func FilesExist(dir string, filenames []string) map[string]bool {
+	results := make(map[string]bool)
+	for _, f := range filenames {
+		exists, _, _ := FileExists(dir, f)
+		results[f] = exists
+	}
+	return results
+}
+
+// ------------------ 辅助函数 ------------------
+// 安全关闭资源（处理关闭错误）
+func SafeClose(closer io.Closer, err *error) {
+	if closeErr := closer.Close(); closeErr != nil && *err == nil {
+		*err = fmt.Errorf("资源关闭错误: %w", closeErr)
+	}
+}
+
+// 文件存在性验证
+func VerifyFileExists(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return fmt.Errorf("%q 是目录而非文件", path)
+	}
+	return nil
+}
+
+// 补丁文件基础校验
+func VerifyPatchFile(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if info.Size() == 0 {
+		return fmt.Errorf("生成的补丁文件为空")
+	}
+	return nil
+}
+
+// 文件访问权限验证
+func VerifyFileAccess(path string, mode int) error {
+	file, err := os.OpenFile(path, mode, 0)
+	if err != nil {
+		return err
+	}
+	file.Close()
+	return nil
+}
+
+// 文件大小校验（示例逻辑）
+func VerifyFileSize(target, source string) error {
+	tInfo, err := os.Stat(target)
+	if err != nil {
+		return err
+	}
+
+	sInfo, _ := os.Stat(source)
+	if sInfo != nil && tInfo.Size() < sInfo.Size()/2 {
+		return fmt.Errorf("目标文件过小（可能不完整）")
+	}
+	return nil
+}
+
+// 获取文件大小（MB）
+func GetFileSizeMB(path string) float64 {
+	info, _ := os.Stat(path)
+	return float64(info.Size()) / (1024 * 1024)
+}
+
 // 创建 tar.gz 压缩包（支持多个文件和文件夹）
 func CreateTarGz(sources []string, target string) error {
 	// 创建目标文件
