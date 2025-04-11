@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 var filePathList []string
@@ -71,10 +72,20 @@ func CreateTarGz(sources []string, target string) error {
 
 	// 遍历每个输入路径
 	for _, source := range sources {
-		info, err := os.Stat(source)
+		// 获取绝对路径并验证
+		absSource, err := filepath.Abs(source)
 		if err != nil {
-			return fmt.Errorf("failed to stat source '%s': %w", source, err)
+			return fmt.Errorf("failed to get absolute path for '%s': %w", source, err)
 		}
+
+		// 获取文件信息
+		info, err := os.Stat(absSource)
+		if err != nil {
+			return fmt.Errorf("failed to stat source '%s': %w", absSource, err)
+		}
+
+		// 计算基准路径（源文件/目录的父目录）
+		basePath := filepath.Dir(absSource)
 
 		// 定义递归添加文件到 tar 的函数
 		var addToTar func(path string, info os.FileInfo) error
@@ -85,8 +96,12 @@ func CreateTarGz(sources []string, target string) error {
 				return fmt.Errorf("failed to create tar header for '%s': %w", path, err)
 			}
 
-			// 设置文件头的名称（相对路径）
-			header.Name = filepath.Base(path)
+			// 计算相对于基准路径的相对路径
+			relPath, err := filepath.Rel(basePath, path)
+			if err != nil {
+				return fmt.Errorf("failed to get relative path for '%s': %w", path, err)
+			}
+			header.Name = relPath
 
 			// 将文件头写入 tar
 			if err := tarWriter.WriteHeader(header); err != nil {
@@ -127,7 +142,7 @@ func CreateTarGz(sources []string, target string) error {
 		}
 
 		// 调用递归函数，开始打包
-		if err := addToTar(source, info); err != nil {
+		if err := addToTar(absSource, info); err != nil {
 			return err
 		}
 	}
@@ -153,6 +168,11 @@ func ExtractTarGz(source, target string) error {
 	// 创建 tar 读取器
 	tarReader := tar.NewReader(gzipReader)
 
+	// 确保目标目录存在
+	if err := os.MkdirAll(target, 0755); err != nil {
+		return fmt.Errorf("failed to create target directory: %w", err)
+	}
+
 	// 遍历 tar 文件中的每个条目
 	for {
 		header, err := tarReader.Next()
@@ -163,27 +183,51 @@ func ExtractTarGz(source, target string) error {
 			return fmt.Errorf("failed to read tar header: %w", err)
 		}
 
-		// 构建目标路径
+		// 安全地构建目标路径
 		targetPath := filepath.Join(target, header.Name)
 
+		// 安全检查：防止路径遍历攻击
+		if !strings.HasPrefix(filepath.Clean(targetPath), filepath.Clean(target)+string(os.PathSeparator)) {
+			return fmt.Errorf("illegal file path: %s", header.Name)
+		}
+
+		// 根据文件类型处理
 		switch header.Typeflag {
 		case tar.TypeDir:
-			// 创建目录
+			// 创建目录（确保权限正确）
 			if err := os.MkdirAll(targetPath, os.FileMode(header.Mode)); err != nil {
-				return fmt.Errorf("failed to create directory: %w", err)
+				return fmt.Errorf("failed to create directory %s: %w", targetPath, err)
 			}
-		case tar.TypeReg:
+		case tar.TypeReg, tar.TypeRegA:
+			// 确保父目录存在
+			if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+				return fmt.Errorf("failed to create parent directory for %s: %w", targetPath, err)
+			}
+
 			// 创建文件并写入内容
-			outFile, err := os.OpenFile(targetPath, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
+			outFile, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode))
 			if err != nil {
-				return fmt.Errorf("failed to create file: %w", err)
+				return fmt.Errorf("failed to create file %s: %w", targetPath, err)
 			}
-			defer outFile.Close()
+
+			// 复制文件内容
 			if _, err := io.Copy(outFile, tarReader); err != nil {
-				return fmt.Errorf("failed to copy file content: %w", err)
+				outFile.Close()
+				return fmt.Errorf("failed to write to file %s: %w", targetPath, err)
+			}
+			outFile.Close()
+		case tar.TypeSymlink:
+			// 处理符号链接
+			if err := os.Symlink(header.Linkname, targetPath); err != nil {
+				return fmt.Errorf("failed to create symlink %s -> %s: %w", targetPath, header.Linkname, err)
 			}
 		default:
 			fmt.Printf("Unsupported file type: %v in %s\n", header.Typeflag, header.Name)
+		}
+
+		// 设置文件修改时间（如果支持）
+		if err := os.Chtimes(targetPath, time.Now(), header.ModTime); err != nil {
+			fmt.Printf("Warning: failed to set modification time for %s: %v\n", targetPath, err)
 		}
 	}
 
