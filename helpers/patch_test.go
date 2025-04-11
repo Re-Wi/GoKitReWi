@@ -37,10 +37,8 @@ func TestIncrementalUpdate(t *testing.T) {
 	}
 
 	// 4. 解析补丁数据
-	var patch []struct {
-		Index uint64
-		Data  []byte
-	}
+	var patch []PatchBlock
+
 	err = json.Unmarshal(patchData, &patch)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal patch data: %v", err)

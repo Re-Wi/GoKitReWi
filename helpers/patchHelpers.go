@@ -2,10 +2,19 @@ package helpers
 
 import (
 	"encoding/json"
+	"fmt"
 	"hash/fnv"
 	"io"
 	"os"
 )
+
+// 统一定义类型
+type PatchBlock struct {
+	Index uint64 `json:"index"`
+	Data  []byte `json:"data"`
+}
+
+type Patch []PatchBlock
 
 // ComputeFileHashes 计算文件的块哈希列表
 func ComputeFileHashes(filePath string, blockSize int) (map[uint64]uint64, error) {
@@ -42,25 +51,22 @@ func ComputeFileHashes(filePath string, blockSize int) (map[uint64]uint64, error
 
 // CompareHashes 比较两个块哈希列表，返回差异块索引
 func CompareHashes(oldHashes, newHashes map[uint64]uint64) []uint64 {
-	var diffBlocks []uint64
-	maxIndex := uint64(0)
-
-	// 找出最大索引
+	allIndexes := make(map[uint64]bool)
+	for idx := range oldHashes {
+		allIndexes[idx] = true
+	}
 	for idx := range newHashes {
-		if idx > maxIndex {
-			maxIndex = idx
-		}
+		allIndexes[idx] = true
 	}
 
-	for blockIndex := uint64(0); blockIndex <= maxIndex; blockIndex++ {
-		oldHash, okOld := oldHashes[blockIndex]
-		newHash, okNew := newHashes[blockIndex]
-
-		if !okOld || !okNew || oldHash != newHash {
-			diffBlocks = append(diffBlocks, blockIndex)
+	var diffBlocks []uint64
+	for idx := range allIndexes {
+		oldHash := oldHashes[idx]
+		newHash := newHashes[idx]
+		if oldHash != newHash {
+			diffBlocks = append(diffBlocks, idx)
 		}
 	}
-
 	return diffBlocks
 }
 
@@ -72,10 +78,7 @@ func GeneratePatch(newFilePath string, diffBlocks []uint64, blockSize int) ([]by
 	}
 	defer file.Close()
 
-	patch := make([]struct {
-		Index uint64
-		Data  []byte
-	}, 0, len(diffBlocks))
+	patch := make(Patch, 0, len(diffBlocks))
 
 	buffer := make([]byte, blockSize)
 	for _, idx := range diffBlocks {
@@ -90,61 +93,76 @@ func GeneratePatch(newFilePath string, diffBlocks []uint64, blockSize int) ([]by
 			return nil, err
 		}
 
-		patch = append(patch, struct {
-			Index uint64
-			Data  []byte
-		}{
+		// 每次创建新切片
+		data := make([]byte, n)
+		copy(data, buffer[:n])
+		patch = append(patch, PatchBlock{
 			Index: idx,
-			Data:  buffer[:n],
+			Data:  data,
 		})
 	}
 
 	// 序列化为二进制或JSON
 	// 这里以JSON为例
-	patchJSON, _ := json.Marshal(patch)
+	patchJSON, err := json.Marshal(patch)
+	if err != nil {
+		return nil, fmt.Errorf("JSON 序列化失败: %w", err)
+	}
 	return patchJSON, nil
 }
 
-// ApplyPatch 应用补丁到旧文件，生成新文件
-func ApplyPatch(oldFilePath, newFilePath string, patch []struct {
-	Index uint64
-	Data  []byte
-}, blockSize int) error {
+// ApplyPatch 应用补丁到旧文件生成新文件
+func ApplyPatch(oldFilePath, newFilePath string, patch []PatchBlock, blockSize int) error {
+	// 打开旧文件
 	oldFile, err := os.Open(oldFilePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("打开旧文件失败: %w", err)
 	}
 	defer oldFile.Close()
 
+	// 创建新文件
 	newFile, err := os.Create(newFilePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("创建新文件失败: %w", err)
 	}
 	defer newFile.Close()
 
-	// 读取旧文件内容并应用补丁
-	buffer := make([]byte, blockSize)
-	for {
-		_, err := oldFile.Read(buffer)
-		if err == io.EOF {
-			break
+	// 计算新文件总长度
+	var maxIndex uint64
+	for _, block := range patch {
+		if block.Index > maxIndex {
+			maxIndex = block.Index
 		}
-		if err != nil {
-			return err
-		}
+	}
+	newFileSize := int64(maxIndex+1) * int64(blockSize)
 
-		// 默认写入旧数据
-		newFile.Write(buffer)
+	// 设置新文件初始长度
+	if err := newFile.Truncate(newFileSize); err != nil {
+		return fmt.Errorf("设置文件长度失败: %w", err)
 	}
 
-	// 覆盖差异块
+	// 复制旧文件内容到新文件（自动处理长度差异）
+	oldInfo, err := oldFile.Stat()
+	if err != nil {
+		return fmt.Errorf("获取旧文件信息失败: %w", err)
+	}
+	copySize := oldInfo.Size()
+	if newFileSize < copySize {
+		copySize = newFileSize
+	}
+	if _, err := oldFile.Seek(0, 0); err != nil {
+		return err
+	}
+	if _, err := io.CopyN(newFile, oldFile, copySize); err != nil {
+		return fmt.Errorf("复制旧文件内容失败: %w", err)
+	}
+
+	// 应用补丁块
 	for _, block := range patch {
 		offset := int64(block.Index) * int64(blockSize)
-		_, err := newFile.Seek(offset, 0)
-		if err != nil {
-			return err
+		if _, err := newFile.WriteAt(block.Data, offset); err != nil {
+			return fmt.Errorf("写入补丁块 %d 失败: %w", block.Index, err)
 		}
-		newFile.Write(block.Data)
 	}
 
 	return nil
