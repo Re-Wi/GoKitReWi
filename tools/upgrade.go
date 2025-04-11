@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/Re-Wi/GoKitReWi/helpers"
 	"github.com/spf13/cobra"
 )
 
 // 请求详细信息的模拟数据结构
-type RequestDetail struct {
+type InfoDetail struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
 }
@@ -21,10 +22,19 @@ var mockData = map[string]string{
 	"example_key_2": "This is the value for example_key_2",
 }
 
+// 获取请求详细信息
+func getInfoDetail(key string) (*InfoDetail, error) {
+	value, exists := mockData[key]
+	if !exists {
+		return nil, fmt.Errorf("key '%s' not found", key)
+	}
+	return &InfoDetail{Key: key, Value: value}, nil
+}
+
 func main() {
 	var rootCmd = &cobra.Command{
 		Use:   "app",
-		Short: "A CLI tool for compression, decompression, and request details",
+		Short: "A CLI tool for compression, decompression, and info details",
 		Long:  `A simple CLI tool that supports creating zip files, extracting zip files, and fetching detailed information by key.`,
 	}
 
@@ -67,26 +77,40 @@ Supports multiple input files and directories, preserving the original folder st
 	}
 
 	// 请求详细信息命令
-	var requestCmd = &cobra.Command{
-		Use:   "request [key]",
+	var infoCmd = &cobra.Command{
+		Use:   "info [key]",
 		Short: "Get detailed information by key",
 		Long:  `Fetches detailed information for the specified key from a mock data store.`,
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			key := args[0]
-			detail, err := getRequestDetail(key)
+			detail, err := getInfoDetail(key)
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 			} else {
 				jsonDetail, _ := json.MarshalIndent(detail, "", "  ")
-				fmt.Printf("Request Detail:\n%s\n", string(jsonDetail))
+				fmt.Printf("Info Detail:\n%s\n", string(jsonDetail))
 			}
 		},
 	}
 
+	// 网络请求
+	var requestCmd = &cobra.Command{
+		Use:   "request",
+		Short: "Send HTTP request with custom parameters",
+		RunE:  helpers.SendRequest,
+	}
+	requestCmd.Flags().StringVarP(&helpers.ReqURL, "url", "u", "", "Target URL (required)")
+	requestCmd.Flags().StringVarP(&helpers.ReqMethod, "method", "m", "GET", "HTTP method")
+	requestCmd.Flags().StringArrayVarP(&helpers.ReqHeaders, "header", "H", []string{}, "Request headers (key:value)")
+	requestCmd.Flags().StringVarP(&helpers.ReqBody, "body", "b", "", "Request body")
+	requestCmd.Flags().DurationVar(&helpers.Timeout, "timeout", 30*time.Second, "Request timeout")
+	_ = requestCmd.MarkFlagRequired("url")
+
 	// 将子命令添加到根命令
 	rootCmd.AddCommand(compressCmd)
 	rootCmd.AddCommand(decompressCmd)
+	rootCmd.AddCommand(infoCmd)
 	rootCmd.AddCommand(requestCmd)
 
 	// 执行命令
@@ -94,13 +118,4 @@ Supports multiple input files and directories, preserving the original folder st
 		fmt.Println(err)
 		os.Exit(1)
 	}
-}
-
-// 获取请求详细信息
-func getRequestDetail(key string) (*RequestDetail, error) {
-	value, exists := mockData[key]
-	if !exists {
-		return nil, fmt.Errorf("key '%s' not found", key)
-	}
-	return &RequestDetail{Key: key, Value: value}, nil
 }
