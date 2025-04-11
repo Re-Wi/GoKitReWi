@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/Re-Wi/GoKitReWi/helpers"
@@ -150,6 +152,81 @@ Supports multiple input files and directories, preserving the original folder st
 		"补丁解码块大小（单位：KB）",
 	)
 
+	// syncCmd 表示代码同步命令
+	var syncCmd = &cobra.Command{
+		Use:   "sync-code",
+		Short: "同步代码仓库更新",
+		Long: `自动检测并同步Git代码仓库更新
+	
+示例:
+  # 同步当前目录仓库
+  diff-tool sync-code
+  
+  # 同步指定目录仓库
+  diff-tool sync-code --path /projects/my-repo`,
+		Args:    cobra.NoArgs, // 不接受位置参数
+		PreRunE: helpers.ValidateSyncArgs,
+		RunE:    helpers.RunCodeSync,
+	}
+	// 添加命令行参数
+	syncCmd.Flags().StringP("path", "p", ".", "Git仓库路径")
+	syncCmd.Flags().BoolP("force", "f", false, "强制同步（忽略检测结果）")
+	syncCmd.Flags().StringP("branch", "b", "", "指定同步分支")
+
+	// sshCheckCmd 动态平台检测版
+	var sshCheckCmd = &cobra.Command{
+		Use:   "ssh-check",
+		Short: "智能诊断SSH连接问题",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// 1. 检测Git仓库信息
+			remoteURL, platform, err := helpers.DetectGitRemote()
+			if err != nil {
+				return fmt.Errorf("仓库检测失败: %w", err)
+			}
+
+			// 2. 获取平台配置
+			config, ok := helpers.PlatformConfig[platform]
+			if !ok {
+				return fmt.Errorf("不支持的代码平台: %s", platform)
+			}
+
+			// 3. 执行连接测试
+			fmt.Printf("测试连接至 [%s] 平台...\n", platform)
+			testCmd := exec.Command("ssh", "-T", fmt.Sprintf("git@%s", config.TestHost))
+			output, _ := testCmd.CombinedOutput()
+
+			// 4. 输出结果
+			if strings.Contains(string(output), "successfully authenticated") {
+				fmt.Printf("✅ SSH认证正常 (%s)\n", remoteURL)
+				return nil
+			}
+
+			// 5. 错误处理
+			fmt.Printf(`🔴 [%s] SSH连接失败
+
+=== 错误信息 ===
+%s
+
+=== 解决方案 ===
+1. 生成专用密钥:
+   ssh-keygen -t ed25519 -f ~/.ssh/%s_key -C "your_email@example.com"
+
+2. 添加SSH配置到 ~/.ssh/config:
+%s
+
+3. 查看公钥并添加到平台:
+   cat ~/.ssh/%s_key.pub
+
+4. 测试连接:
+   ssh -T git@%s
+
+官方指南: %s
+`, platform, output, platform, config.SSHConfig, platform, config.TestHost, config.HelpURL)
+
+			return nil
+		},
+	}
+
 	// 将子命令添加到根命令
 	rootCmd.AddCommand(compressCmd)
 	rootCmd.AddCommand(decompressCmd)
@@ -157,6 +234,8 @@ Supports multiple input files and directories, preserving the original folder st
 	rootCmd.AddCommand(requestCmd)
 	rootCmd.AddCommand(patchCmd)
 	rootCmd.AddCommand(applyCmd)
+	rootCmd.AddCommand(syncCmd)
+	rootCmd.AddCommand(sshCheckCmd)
 
 	// 执行命令
 	if err := rootCmd.Execute(); err != nil {
