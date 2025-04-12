@@ -127,7 +127,7 @@ Supports multiple input files and directories, preserving the original folder st
 	patchCmd.Flags().IntP(
 		"block-size",
 		"b",
-		4, // 默认值 4 KB
+		0, // 默认值 0 KB
 		"差异计算块大小（单位：KB）",
 	)
 

@@ -261,11 +261,8 @@ func ValidatePatchArgs(cmd *cobra.Command, args []string) error {
 
 	// 验证块大小
 	blockSize, _ := cmd.Flags().GetInt("block-size")
-	if blockSize <= 0 {
-		blockSize = (4) // 4 KB
-	}
 	if blockSize > 16*1024 {
-		return fmt.Errorf("块大小需在 4-16384 KB 之间")
+		return fmt.Errorf("块大小需在 1-16384 KB 之间")
 	}
 	return nil
 }
@@ -276,8 +273,25 @@ func RunCreatePatch(cmd *cobra.Command, args []string) error {
 	oldFile := args[0]
 	newFile := args[1]
 	patchFile := args[2]
-
 	blockSize, _ := cmd.Flags().GetInt("block-size")
+	if blockSize <= 0 {
+		// 自动优化块大小
+		optimalBlockKB, err := OptimizeBlockSize(oldFile, newFile, patchFile)
+		if err != nil {
+			fmt.Printf("优化失败: %v\n", err)
+			os.Exit(1)
+		}
+		// 使用最优块生成正式补丁
+		fmt.Printf("正在生成最终补丁文件...\n")
+		if _, err := FixBlockCreatePatchFile(oldFile, newFile, patchFile, optimalBlockKB); err != nil {
+			fmt.Printf("补丁生成失败: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("补丁生成成功！最优块大小: %dKB\n", optimalBlockKB)
+
+		return nil
+	}
 
 	// 创建补丁文件
 	if _, err := FixBlockCreatePatchFile(oldFile, newFile, patchFile, blockSize); err != nil {

@@ -3,6 +3,7 @@ module github.com/Re-Wi/GoKitReWi
 go 1.19
 
 require (
+	github.com/gabstv/go-bsdiff v1.0.5
 	github.com/konsorten/go-xdelta v0.3.1
 	github.com/lib/pq v1.10.4
 	github.com/orandin/lumberjackrus v1.0.1
@@ -19,6 +20,7 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/dsnet/compress v0.0.0-20171208185109-cc9eb1d7ad76 // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/go-sql-driver/mysql v1.7.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
