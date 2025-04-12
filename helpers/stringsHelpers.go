@@ -60,3 +60,16 @@ func CheckURL(u string) bool {
 	}
 	return true
 }
+
+// 辅助函数：去重
+func UniqueStringArry(slice []string) []string {
+	keys := make(map[string]bool)
+	list := []string{}
+	for _, item := range slice {
+		if _, value := keys[item]; !value {
+			keys[item] = true
+			list = append(list, item)
+		}
+	}
+	return list
+}

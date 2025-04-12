@@ -226,6 +226,21 @@ Supports multiple input files and directories, preserving the original folder st
 			return nil
 		},
 	}
+	var generateCmd = &cobra.Command{
+		Use:   "generate",
+		Short: "生成版本差异文件",
+		Long:  `比较Git仓库两个版本之间的差异并生成差异文件`,
+		RunE:  helpers.RunGenerate,
+	}
+	generateCmd.Flags().StringP("repo", "r", "", "Git仓库URL (必填)")
+	generateCmd.Flags().StringP("base", "b", "", "基准版本 (必填)")
+	generateCmd.Flags().StringP("target", "t", "HEAD", "目标版本 (默认HEAD)")
+	generateCmd.Flags().StringP("output", "o", "./diffs", "输出目录")
+	generateCmd.Flags().Bool("bin", false, "包含二进制文件")
+	generateCmd.Flags().IntP("workers", "w", 4, "并行工作数")
+
+	generateCmd.MarkFlagRequired("repo")
+	generateCmd.MarkFlagRequired("base")
 
 	// 将子命令添加到根命令
 	rootCmd.AddCommand(compressCmd)
@@ -236,6 +251,7 @@ Supports multiple input files and directories, preserving the original folder st
 	rootCmd.AddCommand(applyCmd)
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(sshCheckCmd)
+	rootCmd.AddCommand(generateCmd)
 
 	// 执行命令
 	if err := rootCmd.Execute(); err != nil {

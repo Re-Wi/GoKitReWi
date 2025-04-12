@@ -183,7 +183,7 @@ func TestFileExists(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			exists, isFile, err := FileExists(tt.dir, tt.filename)
+			exists, isFile, _, err := PathInfo(filepath.Join(tt.dir, tt.filename))
 			if (err != nil) != tt.wantErr {
 				t.Errorf("错误预期: %v, 实际错误: %v", tt.wantErr, err)
 			}
