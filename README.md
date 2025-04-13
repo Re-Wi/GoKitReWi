@@ -66,6 +66,10 @@ go env -w GOPROXY=https://goproxy.io,direct
 go mod tidy
 
 # 自行运行测试函数
+
+# 打包
+go build -o upgradeReWi.exe .\tools\upgrade\main.go
+
 ```
 
 ### 提交代码并加版本号

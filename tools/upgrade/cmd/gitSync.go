@@ -13,10 +13,10 @@ var syncCmd = &cobra.Command{
 	
 示例:
   # 同步当前目录仓库
-  diff-tool sync-code
+  upgradeReWi sync-code
   
   # 同步指定目录仓库
-  diff-tool sync-code --path /projects/my-repo`,
+  upgradeReWi sync-code --path /projects/my-repo`,
 	Args:    cobra.NoArgs, // 不接受位置参数
 	PreRunE: helpers.ValidateSyncArgs,
 	RunE:    helpers.RunCodeSync,

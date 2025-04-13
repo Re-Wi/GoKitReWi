@@ -121,7 +121,7 @@ func (dg *DiffGenerator) Generate() error {
 		// 远程仓库模式
 		var err error
 		// 创建临时工作目录
-		tmpDir, err := os.MkdirTemp("", "diff-tool-")
+		tmpDir, err := os.MkdirTemp("", "upgradeReWi-")
 		if err != nil {
 			return fmt.Errorf("创建临时目录失败: %w", err)
 		}

@@ -12,8 +12,8 @@ var generatePatchCmd = &cobra.Command{
 	Long: `根据旧文件和新文件生成二进制差异补丁文件，支持自定义块大小
 	
 示例：
-  diff-tool create-patch old.bin new.bin patch.xd
-  diff-tool create-patch old.bin new.bin patch.xd --block-size 8192`,
+  upgradeReWi create-patch old.bin new.bin patch.xd
+  upgradeReWi create-patch old.bin new.bin patch.xd --block-size 8192`,
 	Args:    cobra.ExactArgs(3),        // 必须包含三个位置参数
 	PreRunE: helpers.ValidatePatchArgs, // 参数预校验
 	RunE:    helpers.RunCreatePatch,    // 主执行函数

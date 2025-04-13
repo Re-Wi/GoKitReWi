@@ -12,8 +12,8 @@ var applyCmd = &cobra.Command{
 	Long: `使用旧文件和补丁文件生成新版本文件
 	
 示例：
-  diff-tool apply-patch old.bin new.bin patch.xd
-  diff-tool apply-patch old.bin new.bin patch.xd --block-size 8192`,
+  upgradeReWi apply-patch old.bin new.bin patch.xd
+  upgradeReWi apply-patch old.bin new.bin patch.xd --block-size 8192`,
 	Args:    cobra.ExactArgs(3),        // 强制三个位置参数
 	PreRunE: helpers.ValidateApplyArgs, // 参数预校验
 	RunE:    helpers.RunApplyPatch,     // 主执行逻辑

@@ -8,7 +8,7 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "ReWiUpgrade",
+	Use:   "upgradeReWi",
 	Short: "A CLI tool for compression, decompression, and info details",
 	Long:  `A simple CLI tool that supports creating zip files, extracting zip files, and fetching detailed information by key.`,
 }
