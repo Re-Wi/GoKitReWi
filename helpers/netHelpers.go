@@ -1,26 +1,132 @@
 package helpers
 
 import (
+	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
-var ()
-
 type NetManager struct {
-	BaseURL    string
-	ReqURL     string
-	ReqMethod  string
-	ReqHeaders []string
-	ReqBody    string
-	Timeout    time.Duration
-	RespCode   int
+	BaseURL         string        // 基础 URL，用于拼接请求路径
+	ReqURL          string        // 实际请求的完整 URL
+	ReqMethod       string        // HTTP 请求方法（如 GET、POST）
+	ReqHeaders      []string      // 自定义请求头
+	ReqBody         string        // 请求体内容
+	Timeout         time.Duration // 请求超时时间
+	Retries         int           // 最大重试次数
+	HTTPClient      *http.Client  // 自定义 HTTP 客户端
+	MaxBodySize     int64         // 响应体的最大大小限制
+	AllowInsecure   bool          // 是否允许不安全的 TLS 连接
+	FollowRedirects bool          // 是否跟随重定向
+	Logger          *zap.Logger   // 日志记录器
+	RespCode        int
+}
+
+func NewNetManager() *NetManager {
+	return &NetManager{
+		Timeout:     10 * time.Second,
+		Retries:     3,
+		MaxBodySize: 1 << 30, // 改为 1GB
+		HTTPClient: &http.Client{
+			Timeout: 10 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig:     &tls.Config{InsecureSkipVerify: false},
+				MaxIdleConnsPerHost: 20,
+			},
+		},
+		Logger: zap.NewNop(),
+	}
+}
+
+// 获取远程版本信息
+func (netM *NetManager) GetRemoteVersion(ctx context.Context, platform, dependency, project string) (string, error) {
+	parsedURL, err := url.Parse(netM.BaseURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid base URL: %w", err)
+	}
+
+	parsedURL.Path = fmt.Sprintf("/%s/%s/%s/version.txt",
+		url.PathEscape(platform),
+		url.PathEscape(dependency),
+		url.PathEscape(project))
+
+	var (
+		lastError error
+	)
+	netM.ReqURL = parsedURL.String()
+	for i := 0; i < netM.Retries; i++ {
+		req, _ := http.NewRequestWithContext(ctx, "GET", netM.ReqURL, nil)
+		for _, header := range netM.ReqHeaders {
+			parts := strings.SplitN(header, ":", 2)
+			if len(parts) == 2 {
+				key := strings.TrimSpace(parts[0])
+				value := strings.TrimSpace(parts[1])
+				req.Header.Add(key, value)
+			}
+		}
+		// start := time.Now()
+
+		resp, err := netM.HTTPClient.Do(req)
+		if err != nil {
+			lastError = fmt.Errorf("network error: %w", err)
+			netM.Logger.Warn("Request failed",
+				zap.Error(err),
+				zap.Int("attempt", i+1))
+			continue
+		}
+
+		netM.RespCode = resp.StatusCode
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			content, err := io.ReadAll(io.LimitReader(resp.Body, netM.MaxBodySize))
+			if err != nil {
+				return "", fmt.Errorf("read body: %w", err)
+			}
+			return strings.TrimSpace(string(content)), nil
+		}
+		// fmt.Printf("resp: %v, err: %v \n", resp, err)
+
+		// 记录服务端错误
+		if resp.StatusCode >= 500 {
+			netM.Logger.Error("Server error",
+				zap.Int("status", resp.StatusCode),
+				zap.String("path", parsedURL.Path))
+		}
+
+		// 非重试场景直接返回
+		if !netM.shouldRetry(resp) {
+			break
+		}
+
+		// 指数退避
+		backoff := time.Duration(math.Pow(2, float64(i))) * 100 * time.Millisecond
+		select {
+		case <-time.After(backoff):
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	return "", fmt.Errorf("after %d attempts, last status: %d, error: %w",
+		netM.Retries, netM.RespCode, lastError)
+}
+
+func (netM *NetManager) shouldRetry(resp *http.Response) bool {
+	if resp == nil {
+		return true // 网络错误重试
+	}
+	// 5xx 状态码重试（除 501）
+	return (resp.StatusCode >= 500 && resp.StatusCode != 501) ||
+		resp.StatusCode == 429 || resp.StatusCode == 408
 }
 
 func (netM *NetManager) SendRequest(cmd *cobra.Command, args []string) error {
@@ -74,40 +180,4 @@ func (netM *NetManager) SendRequest(cmd *cobra.Command, args []string) error {
 	fmt.Println("\n响应体:")
 	fmt.Println(string(respBody))
 	return nil
-}
-
-// 获取远程版本信息
-func (netM *NetManager) GetRemoteVersion(platform, dependency, project string) (string, error) {
-	// 解析基础 URL
-	parsedURL, err := url.Parse(netM.BaseURL)
-	if err != nil {
-		panic(err)
-	}
-	// 设置路径
-	parsedURL.Path = fmt.Sprintf("/%s/%s/%s/version.txt",
-		url.PathEscape(platform),
-		url.PathEscape(dependency),
-		url.PathEscape(project))
-
-	// 获取完整的 URL 字符串
-	netM.ReqURL = parsedURL.String()
-
-	// 带超时的 HTTP 客户端
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(netM.ReqURL)
-	if err != nil {
-		return "", fmt.Errorf("Request failed: %v", err)
-	}
-	defer resp.Body.Close()
-	netM.RespCode = resp.StatusCode
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("The server returns an exception status code: %d", resp.StatusCode)
-	}
-
-	content, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("Read response failure: %v", err)
-	}
-
-	return strings.TrimSpace(string(content)), nil
 }

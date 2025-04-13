@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/Re-Wi/GoKitReWi/helpers"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 // snifferCmd 父命令
@@ -47,11 +49,18 @@ var checkCmd = &cobra.Command{
 		// 参数验证逻辑
 		if !isGitRepo {
 			if platform == "" || dependency == "" || project == "" {
-				fmt.Println("Error: Non-Git environments must specify the following parameters:")
-				fmt.Println("  --platform    Platform name")
-				fmt.Println("  --dependency  Dependency name (depending on the largest hardware or software or system version)")
-				fmt.Println("  --project     project name")
-				_ = fmt.Errorf("platform: %s, dependency: %s, project: %s", platform, dependency, project)
+				fmt.Println("Error: Parameters required in non-Git mode")
+				fmt.Println("Missing parameters:")
+				if platform == "" {
+					fmt.Println("  --platform")
+				}
+				if dependency == "" {
+					fmt.Println("  --dependency")
+				}
+				if project == "" {
+					fmt.Println("  --project")
+				}
+				fmt.Printf("platform: %s, dependency: %s, project: %s", platform, dependency, project)
 			}
 		}
 
@@ -64,14 +73,35 @@ var checkCmd = &cobra.Command{
 		if isGitRepo {
 			latest, err = helpers.GetGitVersion()
 		} else {
-			config := helpers.NetManager{
-				BaseURL: baseURL,
+			// 创建 NetManager 实例
+			netM := helpers.NewNetManager()
+			// 设置基础配置
+			netM.BaseURL = baseURL
+			netM.ReqMethod = "GET"
+			netM.ReqHeaders = []string{
+				"User-Agent: MyClient/1.0",
+				"Authorization: Bearer your_token",
 			}
-			latest, err = config.GetRemoteVersion(platform, dependency, project)
+			netM.Timeout = 15 * time.Second
+			netM.Retries = 3
+			netM.AllowInsecure = false // 生产环境建议为 false
+
+			// 替换默认日志记录器
+			logger, _ := zap.NewDevelopment()
+			defer logger.Sync()
+			netM.Logger = logger
+			// netM.Logger = zap.NewExample() // 替换为实际日志配置
+
+			// 调用 GetRemoteVersion 方法
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+
+			latest, err = netM.GetRemoteVersion(ctx, platform, dependency, project)
+
 			if verbose {
-				fmt.Printf("StatusCode: %v, ReqURL: %v \n", config.RespCode, config.ReqURL)
+				fmt.Printf("StatusCode: %v, ReqURL: %v \n", netM.RespCode, netM.ReqURL)
 				if err != nil {
-					fmt.Printf("StatusCode: %v, Error: %v \n", config.RespCode, err)
+					fmt.Printf("StatusCode: %v, Error: %v \n", netM.RespCode, err)
 				}
 			}
 		}
@@ -86,23 +116,9 @@ var checkCmd = &cobra.Command{
 	},
 }
 
-// versionCmd 获取最新版本号
-var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Get latest version number",
-	Run: func(cmd *cobra.Command, args []string) {
-		version, err := getLatestVersion()
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Println(version)
-	},
-}
-
 // descCmd 获取描述文件
 var descCmd = &cobra.Command{
-	Use:   "fetch-description",
+	Use:   "fetch",
 	Short: "Download sniffer description",
 	Run: func(cmd *cobra.Command, args []string) {
 		output, _ := cmd.Flags().GetString("output")
@@ -137,17 +153,16 @@ var configCmd = &cobra.Command{
 }
 
 const (
-	baseURL         = "http://localhost:8888"
-	versionEndpoint = "latest"
-	descriptionURL  = baseURL + "description"
-	configURL       = baseURL + "config"
+	baseURL        = "http://localhost:8888"
+	descriptionURL = baseURL + "description"
+	configURL      = baseURL + "config"
 )
 
 func init() {
 	rootCmd.AddCommand(snifferCmd)
 
 	// 添加子命令
-	snifferCmd.AddCommand(checkCmd, versionCmd, descCmd, configCmd)
+	snifferCmd.AddCommand(checkCmd, descCmd, configCmd)
 
 	// 公共参数
 	descCmd.Flags().StringP("output", "o", "", "Output file path")
@@ -171,26 +186,6 @@ func init() {
 	// 3. 添加校验功能
 	var checksum string
 	descCmd.Flags().StringVar(&checksum, "checksum", "", "File checksum verification")
-}
-
-// 实际业务逻辑函数
-func checkForUpdates() (string, error) {
-	resp, err := http.Get(baseURL + versionEndpoint)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("server returned %d", resp.StatusCode)
-	}
-
-	body, _ := ioutil.ReadAll(resp.Body)
-	return string(body), nil
-}
-
-func getLatestVersion() (string, error) {
-	return checkForUpdates() // 复用检查逻辑
 }
 
 func downloadFile(url string, output string) error {

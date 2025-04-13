@@ -11,6 +11,7 @@ require (
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.8.2
 	github.com/xuri/excelize/v2 v2.7.0
+	go.uber.org/zap v1.27.0
 	golang.org/x/image v0.0.0-20220902085622-e7cb96979f69
 	gorm.io/driver/mysql v1.4.7
 	gorm.io/driver/postgres v1.4.8
@@ -37,6 +38,7 @@ require (
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/xuri/efp v0.0.0-20220603152613-6918739fd470 // indirect
 	github.com/xuri/nfp v0.0.0-20220409054826-5e722a1d9e22 // indirect
+	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/crypto v0.6.0 // indirect
 	golang.org/x/net v0.6.0 // indirect
 	golang.org/x/sys v0.5.0 // indirect
