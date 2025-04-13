@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -31,6 +34,195 @@ type NetManager struct {
 	RespCode        int
 }
 
+func (nm *NetManager) DownloadFile(filePath string) error {
+
+	// 准备HTTP客户端配置
+	client := nm.prepareHTTPClient()
+
+	var lastErr error
+	var resp *http.Response
+
+	// 重试逻辑
+	for attempt := 0; attempt <= nm.Retries; attempt++ {
+		// 创建新的请求（每次重试都需要新请求）
+		req, err := nm.createRequest(nm.ReqURL)
+		if err != nil {
+			return fmt.Errorf("failed to create request: %w", err)
+		}
+
+		// 发送请求
+		resp, err = client.Do(req)
+		if err != nil {
+			lastErr = err
+			if nm.shoulRetry(attempt, nil, err) {
+				nm.logRetry(attempt, err)
+				continue
+			}
+			break
+		}
+
+		// 处理响应
+		nm.RespCode = resp.StatusCode
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			_ = resp.Body.Close()
+			lastErr = fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+			if nm.shoulRetry(attempt, resp, nil) {
+				nm.logRetry(attempt, lastErr)
+				continue
+			}
+			break
+		}
+
+		// 成功响应，处理文件下载
+		if err := nm.saveResponseToFile(resp, filePath); err != nil {
+			_ = resp.Body.Close()
+			return fmt.Errorf("failed to save file: %w", err)
+		}
+
+		_ = resp.Body.Close()
+		return nil
+	}
+
+	if lastErr != nil {
+		return fmt.Errorf("request failed after %d attempts: %w", nm.Retries+1, lastErr)
+	}
+	return fmt.Errorf("unexpected error occurred")
+}
+
+func (nm *NetManager) prepareHTTPClient() *http.Client {
+	// 复制基础客户端配置
+	client := *nm.HTTPClient
+
+	// 配置TLS
+	if transport, ok := client.Transport.(*http.Transport); ok {
+		transport = transport.Clone()
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
+		}
+		transport.TLSClientConfig.InsecureSkipVerify = nm.AllowInsecure
+		client.Transport = transport
+	}
+
+	// 配置重定向
+	if !nm.FollowRedirects {
+		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+	}
+
+	return &client
+}
+
+func (nm *NetManager) createRequest(fullURL string) (*http.Request, error) {
+	var body io.Reader
+	if nm.ReqBody != "" {
+		body = strings.NewReader(nm.ReqBody)
+	}
+
+	req, err := http.NewRequest(nm.ReqMethod, fullURL, body)
+	if err != nil {
+		return nil, err
+	}
+
+	// 设置请求头
+	for _, h := range nm.ReqHeaders {
+		parts := strings.SplitN(h, ":", 2)
+		if len(parts) != 2 {
+			nm.Logger.Warn("Invalid header format", zap.String("header", h))
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		req.Header.Add(key, value)
+	}
+
+	return req, nil
+}
+
+func (nm *NetManager) shoulRetry(attempt int, resp *http.Response, err error) bool {
+	if attempt >= nm.Retries {
+		return false
+	}
+
+	// 网络错误自动重试
+	if err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return true
+		}
+		return true
+	}
+
+	// 5xx状态码重试
+	if resp != nil && resp.StatusCode >= 500 {
+		return true
+	}
+
+	return false
+}
+
+func (nm *NetManager) logRetry(attempt int, err error) {
+	nm.Logger.Info("Retrying request",
+		zap.Int("attempt", attempt+1),
+		zap.Int("max_retries", nm.Retries),
+		zap.Error(err),
+	)
+	time.Sleep(nm.calculateBackoff(attempt))
+}
+
+func (nm *NetManager) calculateBackoff(attempt int) time.Duration {
+	return time.Duration(math.Pow(2, float64(attempt))) * time.Second
+}
+
+func (nm *NetManager) saveResponseToFile(resp *http.Response, filePath string) error {
+	// 处理相对路径，转换为绝对路径
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve absolute path: %w", err)
+	}
+
+	// 创建目标目录（确保所有父目录都存在）
+	if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
+		return fmt.Errorf("failed to create directories: %w", err)
+	}
+
+	// 创建目标文件（使用绝对路径）
+	file, err := os.Create(absPath)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			nm.Logger.Error("Failed to close file", zap.Error(closeErr))
+		}
+	}()
+
+	// 限制读取大小
+	limitedReader := &io.LimitedReader{
+		R: resp.Body,
+		N: nm.MaxBodySize,
+	}
+
+	// 复制数据（使用缓冲写入提高性能）
+	if _, err := io.CopyBuffer(file, limitedReader, make([]byte, 32*1024)); err != nil {
+		// 删除可能已写入的部分文件
+		_ = os.Remove(absPath)
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	// 检查是否超出最大限制
+	if limitedReader.N <= 0 {
+		_ = os.Remove(absPath)
+		return fmt.Errorf("response body exceeds maximum allowed size of %d bytes", nm.MaxBodySize)
+	}
+
+	// 确保数据写入磁盘
+	if err := file.Sync(); err != nil {
+		nm.Logger.Warn("Failed to sync file to disk", zap.Error(err))
+	}
+
+	return nil
+}
+
 func NewNetManager() *NetManager {
 	return &NetManager{
 		Timeout:     10 * time.Second,
@@ -47,22 +239,29 @@ func NewNetManager() *NetManager {
 	}
 }
 
-// 获取远程版本信息
-func (netM *NetManager) GetRemoteVersion(ctx context.Context, platform, dependency, project string) (string, error) {
+// 构建完整请求URL
+func (netM *NetManager) BuildReqURL(platform, dependency, project string, filePath string) error {
 	parsedURL, err := url.Parse(netM.BaseURL)
 	if err != nil {
-		return "", fmt.Errorf("invalid base URL: %w", err)
+		return fmt.Errorf("invalid base URL: %w", err)
 	}
 
-	parsedURL.Path = fmt.Sprintf("/%s/%s/%s/version.txt",
+	parsedURL.Path = fmt.Sprintf("/%s/%s/%s/%s",
 		url.PathEscape(platform),
 		url.PathEscape(dependency),
-		url.PathEscape(project))
+		url.PathEscape(project),
+		filePath)
 
+	netM.ReqURL = parsedURL.String()
+	fmt.Printf("ReqURL: %v \n", netM.ReqURL)
+	return nil
+}
+
+// 获取远程版本信息
+func (netM *NetManager) GetRemoteVersion(ctx context.Context) (string, error) {
 	var (
 		lastError error
 	)
-	netM.ReqURL = parsedURL.String()
 	for i := 0; i < netM.Retries; i++ {
 		req, _ := http.NewRequestWithContext(ctx, "GET", netM.ReqURL, nil)
 		for _, header := range netM.ReqHeaders {
@@ -100,7 +299,7 @@ func (netM *NetManager) GetRemoteVersion(ctx context.Context, platform, dependen
 		if resp.StatusCode >= 500 {
 			netM.Logger.Error("Server error",
 				zap.Int("status", resp.StatusCode),
-				zap.String("path", parsedURL.Path))
+				zap.String("path", netM.ReqURL))
 		}
 
 		// 非重试场景直接返回

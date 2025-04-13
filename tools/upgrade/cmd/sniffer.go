@@ -3,14 +3,17 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
-	"net/http"
-	"os"
 	"time"
 
 	"github.com/Re-Wi/GoKitReWi/helpers"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
+)
+
+const (
+	baseURL        = "http://localhost:8888"
+	descriptionURL = baseURL + "description"
+	configURL      = baseURL + "config"
 )
 
 // snifferCmd 父命令
@@ -96,8 +99,12 @@ var checkCmd = &cobra.Command{
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 
-			latest, err = netM.GetRemoteVersion(ctx, platform, dependency, project)
-
+			err = netM.BuildReqURL(platform, dependency, project, "version.txt")
+			if err != nil {
+				fmt.Printf("BuildReqURL failed: %v \n", err)
+			} else {
+				latest, err = netM.GetRemoteVersion(ctx)
+			}
 			if verbose {
 				fmt.Printf("StatusCode: %v, ReqURL: %v \n", netM.RespCode, netM.ReqURL)
 				if err != nil {
@@ -117,92 +124,78 @@ var checkCmd = &cobra.Command{
 }
 
 // descCmd 获取描述文件
-var descCmd = &cobra.Command{
+var fetchCmd = &cobra.Command{
 	Use:   "fetch",
 	Short: "Download sniffer description",
 	Run: func(cmd *cobra.Command, args []string) {
 		output, _ := cmd.Flags().GetString("output")
-		if output == "" {
-			output = "sniffer-description.yaml"
+		platform, _ := cmd.Flags().GetString("platform")
+		dependency, _ := cmd.Flags().GetString("dependency")
+		project, _ := cmd.Flags().GetString("project")
+
+		if platform == "" || dependency == "" || project == "" || output == "" {
+			fmt.Println("Error: Parameters required in non-Git mode")
+			fmt.Println("Missing parameters:")
+			if platform == "" {
+				fmt.Println("  --platform")
+			}
+			if dependency == "" {
+				fmt.Println("  --dependency")
+			}
+			if project == "" {
+				fmt.Println("  --project")
+			}
+			if output == "" {
+				output = "output.json"
+				fmt.Println("  --output")
+			}
+			fmt.Printf("platform: %s, dependency: %s, project: %s", platform, dependency, project)
 		}
 
-		if err := downloadFile(descriptionURL, output); err != nil {
-			fmt.Printf("Download failed: %v\n", err)
-			os.Exit(1)
+		// 初始化网络管理器
+		nm := helpers.NewNetManager()
+		nm.BaseURL = baseURL
+		nm.ReqURL = "/download"
+		nm.ReqMethod = "GET"
+		nm.ReqHeaders = []string{
+			"Authorization: Bearer token",
+			"X-Custom-Header: value",
 		}
-		fmt.Printf("Description saved to %s\n", output)
+		nm.AllowInsecure = false
+		nm.FollowRedirects = true
+		nm.Timeout = 30 * time.Second
+		nm.Retries = 5
+
+		err := nm.BuildReqURL(platform, dependency, project, output)
+		if err != nil {
+			fmt.Printf("BuildReqURL failed: %v \n", err)
+		} else {
+			// 执行下载
+			err = nm.DownloadFile(output)
+			if err != nil {
+				fmt.Printf("Download failed: %v \n", err)
+			} else {
+				fmt.Printf("file: %s\n", output)
+			}
+		}
 	},
 }
-
-// configCmd 获取配置
-var configCmd = &cobra.Command{
-	Use:   "fetch-config",
-	Short: "Download sniffer config",
-	Run: func(cmd *cobra.Command, args []string) {
-		output, _ := cmd.Flags().GetString("output")
-		if output == "" {
-			output = "sniffer-config.yaml"
-		}
-
-		if err := downloadFile(configURL, output); err != nil {
-			fmt.Printf("Download failed: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("Config saved to %s\n", output)
-	},
-}
-
-const (
-	baseURL        = "http://localhost:8888"
-	descriptionURL = baseURL + "description"
-	configURL      = baseURL + "config"
-)
 
 func init() {
 	rootCmd.AddCommand(snifferCmd)
 
 	// 添加子命令
-	snifferCmd.AddCommand(checkCmd, descCmd, configCmd)
+	snifferCmd.AddCommand(checkCmd, fetchCmd)
 
-	// 公共参数
-	descCmd.Flags().StringP("output", "o", "", "Output file path")
-	configCmd.Flags().StringP("output", "o", "", "Output file path")
 	// 添加参数
-	checkCmd.Flags().StringP("platform", "p", "", "目标平台名称 (非 Git 环境必填)")
-	checkCmd.Flags().StringP("dependency", "d", "", "依赖组件名称 (非 Git 环境必填)")
-	checkCmd.Flags().StringP("project", "j", "", "项目标识名称 (非 Git 环境必填)")
+	fetchCmd.Flags().StringP("output", "o", "", "Output file path")
+	fetchCmd.Flags().StringP("platform", "p", "", "平台名称")
+	fetchCmd.Flags().StringP("dependency", "d", "", "依赖组件名称")
+	fetchCmd.Flags().StringP("project", "j", "", "项目名称")
+
+	checkCmd.Flags().StringP("platform", "p", "", "平台名称")
+	checkCmd.Flags().StringP("dependency", "d", "", "依赖组件名称")
+	checkCmd.Flags().StringP("project", "j", "", "项目名称")
 	checkCmd.Flags().BoolP("verbose", "v", false, "显示详细输出")
 	checkCmd.Flags().BoolP("server", "s", false, "请求服务器而跳过 git仓库 检查")
-
-	// 可以添加以下增强功能：
-	// 1. 添加超时控制
-	var timeout time.Duration
-	checkCmd.Flags().DurationVar(&timeout, "timeout", 10*time.Second, "Request timeout")
-
-	// 2. 添加重试机制
-	var retries int
-	descCmd.Flags().IntVar(&retries, "retries", 3, "Download retry attempts")
-
-	// 3. 添加校验功能
-	var checksum string
-	descCmd.Flags().StringVar(&checksum, "checksum", "", "File checksum verification")
-}
-
-func downloadFile(url string, output string) error {
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download failed with status %d", resp.StatusCode)
-	}
-
-	data, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	return ioutil.WriteFile(output, data, 0644)
 }

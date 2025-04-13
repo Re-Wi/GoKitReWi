@@ -68,7 +68,7 @@ go mod tidy
 # 自行运行测试函数
 
 # 打包
-go build -o upgradeReWi.exe .\tools\upgrade\main.go
+go build -o upgradeReWi.exe ./tools/upgrade/main.go
 
 ```
 
