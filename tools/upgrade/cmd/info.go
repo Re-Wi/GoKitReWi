@@ -15,8 +15,18 @@ type InfoDetail struct {
 
 // 模拟的键值对数据
 var mockData = map[string]string{
-	"example_key_1": "This is the value for example_key_1",
-	"example_key_2": "This is the value for example_key_2",
+	//作者
+	"author": "ReWi",
+	// 邮箱
+	"email": "RejoiceWindow@yeah.net",
+	//版本
+	"version": "v0.0.0",
+	// 描述
+	"description": "增量升级工具",
+	// 文档
+	"doc": "up.rewi.xyz",
+	// 仓库
+	"repository": "https://github.com/Re-Wi/GoKitReWi.git",
 }
 
 // 获取请求详细信息

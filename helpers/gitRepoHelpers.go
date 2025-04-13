@@ -12,11 +12,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// CheckGitRepo 检查当前目录是否为Git仓库
-func CheckGitRepo() bool {
+// CheckGitRepository 检查当前目录是否为Git仓库
+func CheckGitRepository() bool {
 	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
 	output, err := cmd.CombinedOutput()
 	return err == nil && strings.TrimSpace(string(output)) == "true"
+}
+
+// 获取 Git 版本信息
+func GetGitVersion() (string, error) {
+	cmd := exec.Command("git", "describe", "--tags", "--abbrev=0")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("获取 Git 版本失败: %v", err)
+	}
+	return strings.TrimSpace(string(output)), nil
 }
 
 // GetCurrentBranch 获取当前分支名称
@@ -89,7 +99,7 @@ func PullUpdates() error {
 // AutoSyncGitRepo 自动同步流程
 func AutoSyncGitRepo() error {
 	// 步骤1：确认是Git仓库
-	if !CheckGitRepo() {
+	if !CheckGitRepository() {
 		return fmt.Errorf("当前目录不是Git仓库")
 	}
 
@@ -224,7 +234,7 @@ var PlatformConfig = map[string]struct {
 // detectGitRemote 检测远程仓库信息
 func DetectGitRemote() (string, string, error) {
 	// 检查是否是Git仓库
-	if !CheckGitRepo() {
+	if !CheckGitRepository() {
 		return "", "", fmt.Errorf("当前目录不是Git仓库")
 	}
 

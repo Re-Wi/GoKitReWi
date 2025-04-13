@@ -73,3 +73,8 @@ func UniqueStringArry(slice []string) []string {
 	}
 	return list
 }
+
+// 版本号格式验证
+func ValidateVersion(version string) bool {
+	return regexp.MustCompile(`^v\d+\.\d+\.\d+(-[a-zA-Z0-9]+)?$`).MatchString(version)
+}
