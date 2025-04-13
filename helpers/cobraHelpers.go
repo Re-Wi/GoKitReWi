@@ -2,6 +2,7 @@ package helpers
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/spf13/cobra"
 )
@@ -31,4 +32,16 @@ func MustGetInt(cmd *cobra.Command, flagName string) int {
 		panic(fmt.Sprintf("致命错误: 获取参数 %s 失败 - %v", flagName, err))
 	}
 	return val
+}
+
+func MustDo(err error, msg string) {
+	if err != nil {
+		log.Fatalf("%s : %v", msg, err)
+	}
+}
+
+func MightDo(err error, msg string) {
+	if err != nil {
+		log.Printf("%s : %v", msg, err)
+	}
 }
