@@ -2,10 +2,10 @@ package cmd
 
 import (
 	"fmt"
-	"log"
 	"os"
 
-	"github.com/gabstv/go-bsdiff/pkg/bsdiff"
+	"github.com/Re-Wi/GoKitReWi/helpers"
+	"github.com/icedream/go-bsdiff"
 	"github.com/spf13/cobra"
 )
 
@@ -14,30 +14,26 @@ var diffCmd = &cobra.Command{
 	Short: "Generate binary diff between two files",
 	Args:  cobra.ExactArgs(3),
 	Run: func(cmd *cobra.Command, args []string) {
-		oldFile := args[0]
-		newFile := args[1]
-		patchFile := args[2]
+		oldFilePath := args[0]
+		newFilePath := args[1]
+		patchFilePath := args[2]
 
-		oldData, err := os.ReadFile(oldFile)
-		if err != nil {
-			log.Fatalf("Error reading old file: %v", err)
-		}
+		oldFile, err := os.Open(oldFilePath)
+		defer oldFile.Close()
+		helpers.MustDo("Error opening old file", err)
 
-		newData, err := os.ReadFile(newFile)
-		if err != nil {
-			log.Fatalf("Error reading new file: %v", err)
-		}
+		newFile, err := os.Open(newFilePath)
+		defer newFile.Close()
+		helpers.MustDo("Error opening new file", err)
 
-		patch, err := bsdiff.Bytes(oldData, newData)
-		if err != nil {
-			log.Fatalf("Error generating diff: %v", err)
-		}
+		patchFile, err := os.Create(patchFilePath)
+		defer patchFile.Close()
+		helpers.MustDo("Error creating patch file", err)
 
-		if err := os.WriteFile(patchFile, patch, 0644); err != nil {
-			log.Fatalf("Error writing patch file: %v", err)
-		}
+		err = bsdiff.Diff(oldFile, newFile, patchFile)
+		helpers.MightDo("Error generating diff", err)
 
-		fmt.Printf("Successfully generated patch file: %s\n", patchFile)
+		fmt.Println("Successfully generated patch file !")
 	},
 }
 

@@ -34,14 +34,14 @@ func MustGetInt(cmd *cobra.Command, flagName string) int {
 	return val
 }
 
-func MustDo(err error, msg string) {
+func MustDo(errMsg string, err error) {
 	if err != nil {
-		log.Fatalf("%s : %v", msg, err)
+		log.Fatalf("%s : %v", errMsg, err)
 	}
 }
 
-func MightDo(err error, msg string) {
+func MightDo(errMsg string, err error) {
 	if err != nil {
-		log.Printf("%s : %v", msg, err)
+		log.Printf("%s : %v", errMsg, err)
 	}
 }
