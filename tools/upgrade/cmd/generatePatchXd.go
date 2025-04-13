@@ -7,7 +7,7 @@ import (
 
 // patchCmd 表示生成补丁文件的子命令
 var generatePatchCmd = &cobra.Command{
-	Use:   "create-patch",
+	Use:   "create-patch <old-file> <new-file> <patch-file>",
 	Short: "生成二进制差异补丁文件",
 	Long: `根据旧文件和新文件生成二进制差异补丁文件，支持自定义块大小
 	
@@ -25,7 +25,7 @@ func init() {
 	generatePatchCmd.Flags().IntP(
 		"block-size",
 		"b",
-		0, // 默认值 0 KB
+		4, // 默认值 4 KB
 		"差异计算块大小（单位：KB）",
 	)
 }

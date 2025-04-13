@@ -311,7 +311,7 @@ func RunCreatePatch(cmd *cobra.Command, args []string) error {
 // 参数验证逻辑
 func ValidateApplyArgs(cmd *cobra.Command, args []string) error {
 	// 验证输入文件存在性
-	for i, path := range []string{args[0], args[2]} { // oldFile 和 patchFile
+	for i, path := range []string{args[0], args[1]} { // oldFile 和 patchFile
 		if _, err := os.Stat(path); err != nil {
 			return fmt.Errorf("参数 %d 文件不存在: %w \n", i+1, err)
 		}
@@ -327,8 +327,8 @@ func ValidateApplyArgs(cmd *cobra.Command, args []string) error {
 	}
 
 	// 检查目标文件是否已存在
-	if _, err := os.Stat(args[1]); err == nil {
-		return fmt.Errorf("目标文件已存在: %s", args[1])
+	if _, err := os.Stat(args[2]); err == nil {
+		return fmt.Errorf("目标文件已存在: %s", args[2])
 	}
 
 	return nil
@@ -338,8 +338,8 @@ func ValidateApplyArgs(cmd *cobra.Command, args []string) error {
 func RunApplyPatch(cmd *cobra.Command, args []string) error {
 	// 解析参数
 	oldFile := args[0]
-	newFile := args[1]
-	patchFile := args[2]
+	patchFile := args[1]
+	newFile := args[2]
 	blockSize, _ := cmd.Flags().GetInt("block-size")
 
 	// 执行补丁应用
