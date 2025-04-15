@@ -5,8 +5,11 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"fmt"
+	"hash"
 	"io"
 	"io/ioutil"
+	"mime"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -307,34 +310,6 @@ func calculateHash(path string, chunkSize int64, result chan<- hashResult) {
 	result <- hashResult{hash: string(hash.Sum(nil))}
 }
 
-// calculateFileHash 分块计算文件哈希（内存高效）
-func calculateFileHash(path string, chunkSize int64) (string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	hash := sha256.New()
-	buf := make([]byte, chunkSize)
-
-	for {
-		n, err := file.Read(buf)
-		if err != nil && err != io.EOF {
-			return "", err
-		}
-		if n == 0 {
-			break
-		}
-
-		if _, err := hash.Write(buf[:n]); err != nil {
-			return "", err
-		}
-	}
-
-	return string(hash.Sum(nil)), nil
-}
-
 // EnsureFileSize 检查文件是否存在并返回其大小（单位：MB）
 // 如果文件不存在或无法访问，返回 -1 和错误
 func EnsureFileSize(path string, unit string) (float64, error) {
@@ -387,6 +362,98 @@ func VerifyFileSize(targetPath, sourcePath string) error {
 	}
 
 	return nil
+}
+
+func GetMimeType(filename string) string {
+	ext := path.Ext(filename)
+	mimeType := mime.TypeByExtension(ext)
+
+	// 简化处理：取主类型
+	if parts := strings.Split(mimeType, "/"); len(parts) > 0 {
+		return parts[0]
+	}
+	return "application" // 默认类型
+}
+
+// 常见文件类型的魔数签名
+var magicSignatures = map[string][]byte{
+	"image/png":       {0x89, 0x50, 0x4E, 0x47},
+	"image/jpeg":      {0xFF, 0xD8, 0xFF},
+	"application/pdf": {0x25, 0x50, 0x44, 0x46},
+}
+
+func DetectFileType(filePath string) (string, error) {
+	// 打开文件
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	// 读取前512字节（足够大多数文件类型检测）
+	// 读取文件的前 512 字节（通常足够判断文件类型）
+	buffer := make([]byte, 512)
+	_, err = io.ReadFull(file, buffer)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return "", err
+	}
+
+	// 检查已知签名
+	// for mimeType, signature := range magicSignatures {
+	// 	if bytes.HasPrefix(buffer, signature) {
+	// 		return mimeType, nil
+	// 	}
+	// }
+	// 使用 http.DetectContentType 检测 MIME 类型
+	mimeType := http.DetectContentType(buffer)
+	return mimeType, nil
+}
+
+func GetFileTypeSmart(filename string) string {
+
+	// 尝试MIME类型检测
+	if t := GetMimeType(filename); t != "application" {
+		return t
+	}
+
+	// 最后尝试内容检测
+	if t, err := DetectFileType(filename); err == nil {
+		return t
+	}
+
+	return "unknown"
+}
+
+// 计算文件的哈希值
+func CalculateFileHash(filePath string, hashAlgorithm func() hash.Hash) (string, error) {
+	// 打开文件
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	// 创建哈希算法实例
+	hasher := hashAlgorithm()
+
+	// 逐块读取文件内容并写入哈希器
+	buffer := make([]byte, 4096) // 每次读取 4KB
+	for {
+		n, err := file.Read(buffer)
+		if n > 0 {
+			hasher.Write(buffer[:n])
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+	}
+
+	// 获取最终的哈希值
+	hashBytes := hasher.Sum(nil)
+	return fmt.Sprintf("%x", hashBytes), nil // 转换为十六进制字符串
 }
 
 // 创建 tar.gz 压缩包（支持多个文件和文件夹）

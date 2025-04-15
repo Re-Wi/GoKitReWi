@@ -2,7 +2,10 @@ package helpers
 
 import (
 	"bytes"
+	"crypto/md5"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,18 +13,53 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spf13/cobra"
+	"github.com/icedream/go-bsdiff"
 )
 
 // ================== 辅助函数 ==================
 
+type FilePatch struct {
+	Path string `json:"path"`
+	Size int    `json:"size"`
+	Hash string `json:"hash"`
+}
+
+type FileEntry struct {
+	Path   string     `json:"path"`
+	Type   string     `json:"type"`
+	Status string     `json:"status"`
+	Size   int        `json:"size,omitempty"`
+	Hash   string     `json:"hash,omitempty"`
+	Patch  *FilePatch `json:"patch,omitempty"`
+}
+
+type UpdatePackage struct {
+	Version     string      `json:"version"`
+	Description string      `json:"description"`
+	Timestamp   string      `json:"timestamp"`
+	Files       []FileEntry `json:"files"`
+}
+
 type DiffGenerator struct {
-	RepoURL    string
-	BaseRef    string
-	TargetRef  string
-	OutputDir  string
-	Workers    int
-	IncludeBin bool
+	RepoURL       string
+	BaseRef       string
+	TargetRef     string
+	OutputDir     string
+	Workers       int
+	IncludeBin    bool
+	UpdatePackage UpdatePackage
+}
+
+func (dg *DiffGenerator) AddFile(file FileEntry) {
+	dg.UpdatePackage.Files = append(dg.UpdatePackage.Files, file)
+}
+
+func (dg *DiffGenerator) SaveToFile(filename string) error {
+	data, err := json.MarshalIndent(dg.UpdatePackage, "", "    ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filename, data, 0644)
 }
 
 // 本地模式差异检测
@@ -102,6 +140,46 @@ func (dg *DiffGenerator) Generate() error {
 		err        error
 		cleanup    func() // 资源清理函数
 	)
+
+	// ================== 3. 创建输出目录 ==================
+	outputPath := filepath.Clean(dg.OutputDir)
+	if err := os.MkdirAll(outputPath, 0755); err != nil {
+		return fmt.Errorf("创建输出目录失败: %w", err)
+	}
+
+	readmePath := filepath.Join(outputPath, "README.md")
+	_, err = os.Stat(readmePath)
+	if !os.IsNotExist(err) {
+		return fmt.Errorf("%s 文件已存在，跳过创建。%w \n", readmePath, err)
+	}
+	// 文件路径
+	content := `# My Project
+
+This is a simple README file for my project.
+
+## Features
+
+- Feature 1: Description of feature 1.
+
+- Feature 2: Description of feature 2.
+`
+
+	// 创建文件并写入内容
+	err = os.WriteFile(readmePath, []byte(content), 0644)
+	if err != nil {
+		return fmt.Errorf("Error creating README file: %w \n", err)
+	}
+
+	fmt.Println("README file created successfully!")
+
+	// 创建升级包实例
+	dg.UpdatePackage = UpdatePackage{
+		Version:     filepath.Clean(dg.TargetRef), // 版本号,
+		Description: "升级包描述",
+		Timestamp:   time.Now().Format("2006-01-02 15:04:05"),
+		Files:       []FileEntry{}, // 初始化文件列表
+	}
+
 	// ================== 1. 准备版本代码 ==================
 	if dg.RepoURL == "LOCALHOST" {
 		// 本地模式处理
@@ -155,12 +233,6 @@ func (dg *DiffGenerator) Generate() error {
 		return fmt.Errorf("未检测到有效差异")
 	}
 
-	// ================== 3. 创建输出目录 ==================
-	outputPath := dg.getOutputPath()
-	if err := os.MkdirAll(outputPath, 0755); err != nil {
-		return fmt.Errorf("创建输出目录失败: %w", err)
-	}
-
 	// ================== 4. 生成差异文件 ==================
 	sem := make(chan struct{}, dg.Workers)     // 限制并发数为 4
 	errChan := make(chan error, len(diffList)) // 错误通道，带缓冲
@@ -202,12 +274,18 @@ func (dg *DiffGenerator) Generate() error {
 	}
 
 	if err != nil {
-		fmt.Println("发生错误:", err)
-	} else {
-		fmt.Println("所有任务完成，无错误")
+		return fmt.Errorf("发生错误: %w \n", err)
 	}
 
-	return err
+	// 保存为JSON文件
+	packageJsonPath := filepath.Join(outputPath, "package.json")
+	if err = dg.SaveToFile(packageJsonPath); err != nil {
+		return fmt.Errorf("保存文件失败: %w \n", err)
+	}
+	fmt.Printf("JSON文件已生成: %v \n", packageJsonPath)
+
+	fmt.Println("所有任务完成，无错误")
+	return nil
 }
 
 // 辅助方法实现（部分关键函数）
@@ -328,31 +406,6 @@ func isBinaryFile(path string) bool {
 	return false
 }
 
-// getOutputPath 生成输出路径（带版本和时间戳）
-func (dg *DiffGenerator) getOutputPath() string {
-	// 清理版本字符串
-	cleanVersion := func(s string) string {
-		s = strings.ReplaceAll(s, "/", "_")
-		s = strings.ReplaceAll(s, " ", "-")
-		return s
-	}
-
-	// 生成目录名模板
-	dirName := fmt.Sprintf("diff_%s_to_%s_%d",
-		cleanVersion(dg.BaseRef),
-		cleanVersion(dg.TargetRef),
-		time.Now().Unix(),
-	)
-
-	// 构造最终路径
-	finalPath := filepath.Join(
-		sanitizePath(dg.OutputDir), // 路径消毒
-		dirName,
-	)
-
-	return finalPath
-}
-
 func (dg *DiffGenerator) generateFileDiff(basePath string, targetPath string, relFilePath string, outputPath string) (err error) {
 	// ================== 1. 路径安全处理 ==================
 	// 标准化输入路径（防止路径遍历攻击）
@@ -381,12 +434,12 @@ func (dg *DiffGenerator) generateFileDiff(basePath string, targetPath string, re
 	}
 
 	// ================== 4. 生成差异内容 ==================
-	outputFile := filepath.Join(outputDir, filepath.Base(safeRelPath)+".diff")
+	outputFile := filepath.Join(outputDir, filepath.Base(safeRelPath)+".patch")
 	switch fileStatus {
 	case FileAdded:
-		return dg.generateAdditionDiff(absTargetPath, outputFile)
+		return dg.generateAdditionDiff(absTargetPath, absTargetPath)
 	case FileDeleted:
-		return dg.generateDeletionDiff(absBasePath, outputFile)
+		return dg.generateDeletionDiff(absBasePath)
 	case FileModified:
 		return dg.generateModificationDiff(absBasePath, absTargetPath, outputFile)
 	default:
@@ -397,35 +450,134 @@ func (dg *DiffGenerator) generateFileDiff(basePath string, targetPath string, re
 
 // 生成不同类型差异的详细实现
 func (dg *DiffGenerator) generateAdditionDiff(targetFile, outputFile string) error {
-	content, err := os.ReadFile(targetFile)
+	// 获取文件信息
+	fileInfo, err := os.Stat(targetFile)
+	if err != nil {
+		fmt.Printf("获取文件信息失败: %v", err)
+		return err
+	}
+
+	// 计算 MD5 哈希值
+	md5Hash, err := CalculateFileHash(targetFile, md5.New)
+	if err != nil {
+		fmt.Printf("Error calculating MD5: %v", err)
+	}
+	fmt.Printf("MD5 Hash: %s\n", md5Hash)
+
+	dg.AddFile(FileEntry{
+		Path:   filepath.Clean(targetFile),
+		Type:   GetFileTypeSmart(targetFile),
+		Status: "added",
+		Size:   int(fileInfo.Size()),
+		Hash:   md5Hash,
+	})
+
+	// 打开源文件
+	srcFile, err := os.Open(targetFile)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	// 创建目标文件
+	dstFile, err := os.Create(outputFile)
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	// 使用 io.Copy 复制文件内容
+	_, err = io.Copy(dstFile, srcFile)
 	if err != nil {
 		return err
 	}
 
-	diffContent := fmt.Sprintf("+++ Added File: %s\n%s", filepath.Base(targetFile), content)
-	return os.WriteFile(outputFile, []byte(diffContent), 0644)
+	// 确保目标文件的元数据与源文件一致
+	return dstFile.Sync()
 }
 
 func (dg *DiffGenerator) generateModificationDiff(baseFile, targetFile, outputFile string) error {
-	// 自动优化块大小
-	optimalBlockKB, err := OptimizeBlockSize(baseFile, targetFile, outputFile)
+	// 获取文件信息
+	b_fileInfo, err := os.Stat(targetFile)
 	if err != nil {
-		fmt.Printf("优化失败: %v\n", err)
-		os.Exit(1)
-	}
-	// 使用最优块生成正式补丁
-	fmt.Printf("正在生成最终补丁文件...\n")
-	if _, err := FixBlockCreatePatchFile(baseFile, targetFile, outputFile, optimalBlockKB); err != nil {
-		fmt.Printf("补丁生成失败: %v\n", err)
-		os.Exit(1)
+		fmt.Printf("获取文件信息失败: %v", err)
+		return err
 	}
 
-	fmt.Printf("补丁生成成功！最优块大小: %dKB\n", optimalBlockKB)
+	// 计算 MD5 哈希值
+	b_md5Hash, err := CalculateFileHash(targetFile, md5.New)
+	if err != nil {
+		fmt.Printf("Error calculating MD5: %v", err)
+	}
+	fmt.Printf("MD5 Hash: %s\n", b_md5Hash)
 
+	oldFile, err := os.Open(baseFile)
+	defer oldFile.Close()
+	if err != nil {
+		return fmt.Errorf("Error opening old file: %w", err)
+	}
+
+	newFile, err := os.Open(targetFile)
+	defer newFile.Close()
+	if err != nil {
+		return fmt.Errorf("Error opening new file: %w", err)
+	}
+
+	patchFile, err := os.Create(outputFile)
+	defer patchFile.Close()
+	if err != nil {
+		return fmt.Errorf("Error creating patch file: %w", err)
+	}
+
+	err = bsdiff.Diff(oldFile, newFile, patchFile)
+	if err != nil {
+		return fmt.Errorf("Error generating diff: %w", err)
+	}
+
+	// 确保文件内容已写入磁盘
+	err = patchFile.Sync()
+	if err != nil {
+		return fmt.Errorf("Error syncing patch file: %w", err)
+	}
+
+	// 获取文件信息
+	o_fileInfo, err := os.Stat(outputFile)
+	if err != nil {
+		return fmt.Errorf("获取文件信息失败: %w", err)
+	}
+
+	// 计算 MD5 哈希值
+	o_md5Hash, err := CalculateFileHash(outputFile, md5.New)
+	if err != nil {
+		return fmt.Errorf("Error calculating MD5: %w", err)
+	}
+	fmt.Printf("MD5 Hash: %s\n", o_md5Hash)
+
+	dg.AddFile(FileEntry{
+		Path:   filepath.Clean(baseFile),
+		Type:   GetFileTypeSmart(baseFile),
+		Status: "modified",
+		Size:   int(b_fileInfo.Size()),
+		Hash:   b_md5Hash,
+		Patch: &FilePatch{
+			Path: filepath.Clean(outputFile),
+			Size: int(o_fileInfo.Size()),
+			Hash: o_md5Hash,
+		},
+	})
+
+	fmt.Printf("Successfully generated patch file !  %d KB \n", o_fileInfo.Size())
 	return nil
 }
 
-func (dg *DiffGenerator) generateDeletionDiff(baseFile, outputFile string) error {
+func (dg *DiffGenerator) generateDeletionDiff(baseFile string) error {
+
+	dg.AddFile(FileEntry{
+		Path:   filepath.Clean(baseFile),
+		Type:   GetFileTypeSmart(baseFile),
+		Status: "deleted",
+	})
+
 	content, err := os.ReadFile(baseFile)
 	if err != nil {
 		return err
@@ -435,38 +587,5 @@ func (dg *DiffGenerator) generateDeletionDiff(baseFile, outputFile string) error
 
 	fmt.Printf("文件已删除: %s\n", baseFile)
 
-	return nil
-}
-
-// sanitizePath 路径消毒防止遍历攻击
-func sanitizePath(path string) string {
-	// 转换为绝对路径
-	if !filepath.IsAbs(path) {
-		absPath, err := filepath.Abs(path)
-		if err == nil {
-			path = absPath
-		}
-	}
-
-	// 清理路径中的特殊字符
-	return filepath.Clean(path)
-}
-
-func RunGenerate(cmd *cobra.Command, args []string) error {
-	config := DiffGenerator{
-		RepoURL:    MustGetString(cmd, "repo"),
-		BaseRef:    MustGetString(cmd, "base"),
-		TargetRef:  MustGetString(cmd, "target"),
-		OutputDir:  MustGetString(cmd, "output"),
-		IncludeBin: MustGetBool(cmd, "bin"),
-		Workers:    MustGetInt(cmd, "workers"),
-	}
-
-	if err := config.Generate(); err != nil {
-		return fmt.Errorf("\n❌ 差异生成失败: %w", err)
-	}
-
-	absPath, _ := filepath.Abs(config.OutputDir)
-	fmt.Printf("\n✅ 差异生成成功！\n输出目录: %s\n", absPath)
 	return nil
 }

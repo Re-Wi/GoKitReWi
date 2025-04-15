@@ -1,6 +1,9 @@
 package helpers
 
 import (
+	"crypto/md5"
+	"crypto/sha1"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -194,5 +197,33 @@ func TestFileExists(t *testing.T) {
 				t.Errorf("文件类型预期: %v, 实际: %v", tt.wantIsFile, isFile)
 			}
 		})
+	}
+}
+
+func TestCalculateFileHash(t *testing.T) {
+	filePath := "./fileHelpers.go" // 替换为你的文件路径
+
+	// 计算 MD5 哈希值
+	md5Hash, err := CalculateFileHash(filePath, md5.New)
+	if err != nil {
+		t.Errorf("Error calculating MD5: %v", err)
+	} else {
+		t.Errorf("MD5 Hash: %s\n", md5Hash)
+	}
+
+	// 计算 SHA1 哈希值
+	sha1Hash, err := CalculateFileHash(filePath, sha1.New)
+	if err != nil {
+		t.Errorf("Error calculating SHA1: %v", err)
+	} else {
+		t.Errorf("SHA1 Hash: %s\n", sha1Hash)
+	}
+
+	// 计算 SHA256 哈希值
+	sha256Hash, err := CalculateFileHash(filePath, sha256.New)
+	if err != nil {
+		t.Errorf("Error calculating SHA256: %v", err)
+	} else {
+		t.Errorf("SHA256 Hash: %s\n", sha256Hash)
 	}
 }
