@@ -123,12 +123,12 @@ func GetFileChangeStatus(basePath, targetPath string) (FileChangeStatus, error) 
 	_, targetExists, _, _ := PathInfo(targetPath)
 	switch {
 	case !baseExists && targetExists:
-		return FileAdded, fmt.Errorf("文件新增 \n")
+		return FileAdded, nil
 	case baseExists && !targetExists:
-		return FileDeleted, fmt.Errorf("文件删除 \n")
+		return FileDeleted, nil
 	case baseExists && targetExists:
 		if same, err := FilesEqual(basePath, targetPath); err != nil {
-			return FileUnknown, err
+			return FileUnknown, fmt.Errorf("文件内容比较失败: %w", err)
 		} else if !same {
 			return FileModified, nil
 		}

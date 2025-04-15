@@ -434,14 +434,13 @@ func (dg *DiffGenerator) generateFileDiff(basePath string, targetPath string, re
 	}
 
 	// ================== 4. 生成差异内容 ==================
-	outputFile := filepath.Join(outputDir, filepath.Base(safeRelPath)+".patch")
 	switch fileStatus {
 	case FileAdded:
-		return dg.generateAdditionDiff(absTargetPath, absTargetPath)
+		return dg.generateAdditionDiff(absTargetPath, outputDir, safeRelPath)
 	case FileDeleted:
-		return dg.generateDeletionDiff(absBasePath)
+		return dg.generateDeletionDiff(absBasePath, safeRelPath)
 	case FileModified:
-		return dg.generateModificationDiff(absBasePath, absTargetPath, outputFile)
+		return dg.generateModificationDiff(absBasePath, absTargetPath, outputDir, safeRelPath)
 	default:
 		return fmt.Errorf("未知文件状态: %s  \n", safeRelPath)
 	}
@@ -449,7 +448,7 @@ func (dg *DiffGenerator) generateFileDiff(basePath string, targetPath string, re
 }
 
 // 生成不同类型差异的详细实现
-func (dg *DiffGenerator) generateAdditionDiff(targetFile, outputFile string) error {
+func (dg *DiffGenerator) generateAdditionDiff(targetFile, outputDir, relFilePath string) error {
 	// 获取文件信息
 	fileInfo, err := os.Stat(targetFile)
 	if err != nil {
@@ -464,12 +463,19 @@ func (dg *DiffGenerator) generateAdditionDiff(targetFile, outputFile string) err
 	}
 	fmt.Printf("MD5 Hash: %s\n", md5Hash)
 
+	outputFile := filepath.Join(outputDir, filepath.Base(relFilePath))
+
 	dg.AddFile(FileEntry{
-		Path:   filepath.Clean(targetFile),
+		Path:   relFilePath,
 		Type:   GetFileTypeSmart(targetFile),
 		Status: "added",
 		Size:   int(fileInfo.Size()),
 		Hash:   md5Hash,
+		Patch: &FilePatch{
+			Path: outputFile,
+			Size: int(fileInfo.Size()),
+			Hash: md5Hash,
+		},
 	})
 
 	// 打开源文件
@@ -496,7 +502,7 @@ func (dg *DiffGenerator) generateAdditionDiff(targetFile, outputFile string) err
 	return dstFile.Sync()
 }
 
-func (dg *DiffGenerator) generateModificationDiff(baseFile, targetFile, outputFile string) error {
+func (dg *DiffGenerator) generateModificationDiff(baseFile, targetFile, outputDir, relFilePath string) error {
 	// 获取文件信息
 	b_fileInfo, err := os.Stat(targetFile)
 	if err != nil {
@@ -523,6 +529,7 @@ func (dg *DiffGenerator) generateModificationDiff(baseFile, targetFile, outputFi
 		return fmt.Errorf("Error opening new file: %w", err)
 	}
 
+	outputFile := filepath.Join(outputDir, filepath.Base(relFilePath)+".patch")
 	patchFile, err := os.Create(outputFile)
 	defer patchFile.Close()
 	if err != nil {
@@ -554,13 +561,13 @@ func (dg *DiffGenerator) generateModificationDiff(baseFile, targetFile, outputFi
 	fmt.Printf("MD5 Hash: %s\n", o_md5Hash)
 
 	dg.AddFile(FileEntry{
-		Path:   filepath.Clean(baseFile),
+		Path:   relFilePath,
 		Type:   GetFileTypeSmart(baseFile),
 		Status: "modified",
 		Size:   int(b_fileInfo.Size()),
 		Hash:   b_md5Hash,
 		Patch: &FilePatch{
-			Path: filepath.Clean(outputFile),
+			Path: outputFile,
 			Size: int(o_fileInfo.Size()),
 			Hash: o_md5Hash,
 		},
@@ -570,22 +577,22 @@ func (dg *DiffGenerator) generateModificationDiff(baseFile, targetFile, outputFi
 	return nil
 }
 
-func (dg *DiffGenerator) generateDeletionDiff(baseFile string) error {
+func (dg *DiffGenerator) generateDeletionDiff(baseFile, relFilePath string) error {
 
 	dg.AddFile(FileEntry{
-		Path:   filepath.Clean(baseFile),
+		Path:   relFilePath,
 		Type:   GetFileTypeSmart(baseFile),
 		Status: "deleted",
 	})
 
-	content, err := os.ReadFile(baseFile)
-	if err != nil {
-		return err
-	}
-	_ = fmt.Sprintf("--- Deleted File: %s\n%s", filepath.Base(baseFile), content)
+	// content, err := os.ReadFile(baseFile)
+	// if err != nil {
+	// 	return err
+	// }
+	// _ = fmt.Sprintf("--- Deleted File: %s\n%s", filepath.Base(baseFile), content)
 	// return os.WriteFile(outputFile, []byte(diffContent), 0644)
 
-	fmt.Printf("文件已删除: %s\n", baseFile)
+	fmt.Printf("文件已删除: %s \n", baseFile)
 
 	return nil
 }
