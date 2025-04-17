@@ -1,7 +1,9 @@
 package cmd
 
 import (
-	"fmt"
+	"crypto/md5"
+	"log"
+	"os"
 
 	"github.com/Re-Wi/GoKitReWi/helpers"
 	"github.com/spf13/cobra"
@@ -20,10 +22,23 @@ Supports multiple input files and directories, preserving the original folder st
 
 		err := helpers.CreateTarGz(sources, output)
 		if err != nil {
-			fmt.Printf("Error creating tar.gz: %v\n", err)
-		} else {
-			fmt.Printf("Successfully created tar.gz file: %s (with highest compression)\n", output)
+			log.Fatalf("Error creating tar.gz: %v\n", err)
 		}
+		log.Printf("Successfully created tar.gz file: %s (with highest compression)\n", output)
+
+		hashPath := output + ".md5"
+		// 计算 MD5 哈希值
+		md5Hash, err := helpers.CalculateFileHash(output, md5.New)
+		if err != nil {
+			log.Fatalf("Error calculating hash: %v", err)
+		}
+		log.Printf("MD5 Hash: %s\n", md5Hash)
+		// 写入哈希文件
+		err = os.WriteFile(hashPath, []byte(md5Hash), 0644)
+		if err != nil {
+			log.Fatalf("Error writing hash file: %v", err)
+		}
+		log.Printf("Successfully created hash file: %s\n", hashPath)
 	},
 }
 

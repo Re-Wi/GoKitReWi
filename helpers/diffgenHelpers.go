@@ -13,33 +13,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Re-Wi/GoKitReWi/handlers"
 	"github.com/icedream/go-bsdiff"
 )
 
 // ================== 辅助函数 ==================
-
-type FilePatch struct {
-	Path string `json:"path"`
-	Size int    `json:"size"`
-	Hash string `json:"hash"`
-}
-
-type FileEntry struct {
-	Path   string     `json:"path"`
-	Type   string     `json:"type"`
-	Status string     `json:"status"`
-	Size   int        `json:"size,omitempty"`
-	Hash   string     `json:"hash,omitempty"`
-	Patch  *FilePatch `json:"patch,omitempty"`
-}
-
-type UpdatePackage struct {
-	Version     string      `json:"version"`
-	Description string      `json:"description"`
-	Timestamp   string      `json:"timestamp"`
-	Files       []FileEntry `json:"files"`
-}
-
 type DiffGenerator struct {
 	RepoURL       string
 	BaseRef       string
@@ -47,10 +25,10 @@ type DiffGenerator struct {
 	OutputDir     string
 	Workers       int
 	IncludeBin    bool
-	UpdatePackage UpdatePackage
+	UpdatePackage handlers.UpdatePackage
 }
 
-func (dg *DiffGenerator) AddFile(file FileEntry) {
+func (dg *DiffGenerator) AddFile(file handlers.FileEntry) {
 	dg.UpdatePackage.Files = append(dg.UpdatePackage.Files, file)
 }
 
@@ -173,11 +151,11 @@ This is a simple README file for my project.
 	fmt.Println("README file created successfully!")
 
 	// 创建升级包实例
-	dg.UpdatePackage = UpdatePackage{
+	dg.UpdatePackage = handlers.UpdatePackage{
 		Version:     filepath.Clean(dg.TargetRef), // 版本号,
 		Description: "升级包描述",
 		Timestamp:   time.Now().Format("2006-01-02 15:04:05"),
-		Files:       []FileEntry{}, // 初始化文件列表
+		Files:       []handlers.FileEntry{}, // 初始化文件列表
 	}
 
 	// ================== 1. 准备版本代码 ==================
@@ -465,14 +443,14 @@ func (dg *DiffGenerator) generateAdditionDiff(targetFile, outputDir, relFilePath
 
 	outputFile := filepath.Join(outputDir, filepath.Base(relFilePath))
 
-	dg.AddFile(FileEntry{
+	dg.AddFile(handlers.FileEntry{
 		Path:   relFilePath,
 		Type:   GetFileTypeSmart(targetFile),
 		Status: "added",
 		Size:   int(fileInfo.Size()),
 		Hash:   md5Hash,
-		Patch: &FilePatch{
-			Path: outputFile,
+		Patch: &handlers.FilePatch{
+			Path: filepath.Clean(filepath.Join("files", filepath.Base(relFilePath))),
 			Size: int(fileInfo.Size()),
 			Hash: md5Hash,
 		},
@@ -560,14 +538,14 @@ func (dg *DiffGenerator) generateModificationDiff(baseFile, targetFile, outputDi
 	}
 	fmt.Printf("MD5 Hash: %s\n", o_md5Hash)
 
-	dg.AddFile(FileEntry{
+	dg.AddFile(handlers.FileEntry{
 		Path:   relFilePath,
 		Type:   GetFileTypeSmart(baseFile),
 		Status: "modified",
 		Size:   int(b_fileInfo.Size()),
 		Hash:   b_md5Hash,
-		Patch: &FilePatch{
-			Path: outputFile,
+		Patch: &handlers.FilePatch{
+			Path: filepath.Clean(filepath.Join("files", filepath.Base(relFilePath)+".patch")),
 			Size: int(o_fileInfo.Size()),
 			Hash: o_md5Hash,
 		},
@@ -579,7 +557,7 @@ func (dg *DiffGenerator) generateModificationDiff(baseFile, targetFile, outputDi
 
 func (dg *DiffGenerator) generateDeletionDiff(baseFile, relFilePath string) error {
 
-	dg.AddFile(FileEntry{
+	dg.AddFile(handlers.FileEntry{
 		Path:   relFilePath,
 		Type:   GetFileTypeSmart(baseFile),
 		Status: "deleted",

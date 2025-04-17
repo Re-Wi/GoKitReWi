@@ -103,3 +103,25 @@ func GetJsonFiles(folder string) {
 		}
 	}
 }
+
+type FilePatch struct {
+	Path string `json:"path"`
+	Size int    `json:"size"`
+	Hash string `json:"hash"`
+}
+
+type FileEntry struct {
+	Path   string     `json:"path"`
+	Type   string     `json:"type"`
+	Status string     `json:"status"`
+	Size   int        `json:"size,omitempty"`
+	Hash   string     `json:"hash,omitempty"`
+	Patch  *FilePatch `json:"patch,omitempty"`
+}
+
+type UpdatePackage struct {
+	Version     string      `json:"version"`
+	Description string      `json:"description"`
+	Timestamp   string      `json:"timestamp"`
+	Files       []FileEntry `json:"files"`
+}

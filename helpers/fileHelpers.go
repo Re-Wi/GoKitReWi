@@ -424,7 +424,6 @@ func GetFileTypeSmart(filename string) string {
 	return "unknown"
 }
 
-// 计算文件的哈希值
 func CalculateFileHash(filePath string, hashAlgorithm func() hash.Hash) (string, error) {
 	// 打开文件
 	file, err := os.Open(filePath)
@@ -435,25 +434,104 @@ func CalculateFileHash(filePath string, hashAlgorithm func() hash.Hash) (string,
 
 	// 创建哈希算法实例
 	hasher := hashAlgorithm()
-
-	// 逐块读取文件内容并写入哈希器
-	buffer := make([]byte, 4096) // 每次读取 4KB
-	for {
-		n, err := file.Read(buffer)
-		if n > 0 {
-			hasher.Write(buffer[:n])
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return "", err
-		}
+	// 标准库的io.Copy内部采用32KB缓冲区（优于当前4KB）
+	if _, err := io.Copy(hasher, file); err != nil {
+		return "", err
 	}
 
-	// 获取最终的哈希值
 	hashBytes := hasher.Sum(nil)
-	return fmt.Sprintf("%x", hashBytes), nil // 转换为十六进制字符串
+	return fmt.Sprintf("%x", hashBytes), nil
+}
+
+// 验证文件哈希值
+func VerifyFileHash(filePath, expectedHash string, hashAlgorithm func() hash.Hash) error {
+	expectedHashData := strings.TrimSpace(string(expectedHash))
+	if expectedHashData == "" {
+		return fmt.Errorf("empty hash data")
+	}
+
+	// 计算文件哈希值
+	actualHash, err := CalculateFileHash(filePath, hashAlgorithm)
+	if err != nil {
+		return fmt.Errorf("Error calculating MD5: %w", err)
+	}
+
+	// 比较哈希值
+	if actualHash != expectedHashData {
+		return fmt.Errorf("hash mismatch (expected %s, got %s)", expectedHashData, actualHash)
+	}
+	return nil
+}
+
+// CopyDir 递归复制整个目录
+func CopyDir(src, dst string) error {
+	// 获取源目录信息
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if !srcInfo.IsDir() {
+		return os.ErrNotExist // 源路径不是目录
+	}
+
+	// 创建目标目录（保留原始权限）
+	if err := os.MkdirAll(dst, srcInfo.Mode()); err != nil {
+		return err
+	}
+
+	// 遍历源目录
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			// 递归复制子目录
+			if err := CopyDir(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			// 处理常规文件
+			if err := CopyFile(srcPath, dstPath); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// CopyFile 复制单个文件（保留权限）
+func CopyFile(src, dst string) error {
+	// 打开源文件
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	// 获取源文件权限
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	// 创建目标文件（相同权限）
+	dstFile, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, srcInfo.Mode())
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	// 复制内容
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // 创建 tar.gz 压缩包（支持多个文件和文件夹）
